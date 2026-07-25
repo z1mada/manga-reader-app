@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useAuth } from '../AuthContext';
+
+const BACKEND_URL = 'http://localhost:3000';
 
 function ChapterReader() {
   const { chapterId } = useParams();
@@ -7,26 +10,31 @@ function ChapterReader() {
   const [externalUrl, setExternalUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     setExternalUrl(null);
 
-    // Cek dulu detail chapter, ada externalUrl atau nggak
-    fetch(`https://api.mangadex.org/chapter/${chapterId}`)
+    fetch(`https://api.mangadex.org/chapter/${chapterId}?includes[]=manga`)
       .then(res => res.json())
       .then(data => {
-        const url = data.data.attributes.externalUrl;
+        const chapterData = data.data;
+        const url = chapterData.attributes.externalUrl;
+
+        // Catat ke history kalau sudah login
+        if (user) {
+          const mangaRel = chapterData.relationships.find(rel => rel.type === 'manga');
+          recordHistory(mangaRel?.id, chapterId, chapterData.attributes.chapter);
+        }
 
         if (url) {
-          // Chapter external, langsung set, nggak perlu fetch halaman
           setExternalUrl(url);
           setLoading(false);
           return;
         }
 
-        // Chapter di-hosting MangaDex, lanjut ambil halaman
         return fetch(`https://api.mangadex.org/at-home/server/${chapterId}`)
           .then(res => {
             if (!res.ok) throw new Error('Gagal memuat halaman chapter');
@@ -50,7 +58,37 @@ function ChapterReader() {
         setError(err.message);
         setLoading(false);
       });
-  }, [chapterId]);
+  }, [chapterId, user]);
+
+  function recordHistory(mangaId, chapId, chapterNumber) {
+    if (!mangaId) return;
+
+    // Ambil info manga dulu (judul, cover) buat disimpan di history
+    fetch(`https://api.mangadex.org/manga/${mangaId}?includes[]=cover_art`)
+      .then(res => res.json())
+      .then(data => {
+        const manga = data.data;
+        const title = manga.attributes.title.en || Object.values(manga.attributes.title)[0];
+        const cover = manga.relationships.find(rel => rel.type === 'cover_art');
+        const coverUrl = cover
+          ? `https://uploads.mangadex.org/covers/${manga.id}/${cover.attributes.fileName}.256.jpg`
+          : null;
+
+        fetch(`${BACKEND_URL}/history`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            manga_id: manga.id,
+            manga_title: title,
+            cover_url: coverUrl,
+            chapter_id: chapId,
+            chapter_number: chapterNumber,
+          }),
+        }).catch(err => console.error('Gagal simpan history:', err));
+      })
+      .catch(err => console.error('Gagal ambil info manga untuk history:', err));
+  }
 
   if (loading) return <p>Loading...</p>;
   if (error) return <p>{error}</p>;

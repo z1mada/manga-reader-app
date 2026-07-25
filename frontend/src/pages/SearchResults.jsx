@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
 
 function getTitle(manga) {
   const titles = manga.attributes.title;
@@ -12,14 +12,14 @@ function getCoverUrl(manga) {
   return `https://uploads.mangadex.org/covers/${manga.id}/${cover.attributes.fileName}.256.jpg`;
 }
 
-function MangaSearch() {
-  const [query, setQuery] = useState('');
+function SearchResults() {
+  const [searchParams] = useSearchParams();
+  const query = searchParams.get('q');
   const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  function handleSearch(e) {
-    e.preventDefault();
-    if (!query.trim()) return;
+  useEffect(() => {
+    if (!query) return;
 
     setLoading(true);
     fetch(`https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&includes[]=cover_art`)
@@ -32,22 +32,13 @@ function MangaSearch() {
         console.error('Gagal fetch manga:', err);
         setLoading(false);
       });
-  }
+  }, [query]);
+
+  if (loading) return <p>Loading...</p>;
 
   return (
     <div>
-      <h1>Cari Manga</h1>
-      <form onSubmit={handleSearch}>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Judul manga..."
-        />
-        <button type="submit">Cari</button>
-      </form>
-
-      {loading && <p>Loading...</p>}
+      <h1>Hasil pencarian: "{query}"</h1>
 
       <ul style={{ listStyle: 'none', display: 'flex', flexWrap: 'wrap', gap: '16px', padding: 0 }}>
         {results.map(manga => {
@@ -72,4 +63,4 @@ function MangaSearch() {
   );
 }
 
-export default MangaSearch;
+export default SearchResults;
